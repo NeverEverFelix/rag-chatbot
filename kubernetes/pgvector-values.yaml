@@ -1,0 +1,20 @@
+image:
+  registry: string
+  repository: pgvector
+  tag: latest
+  pullPolicy: Always
+
+auth:
+  username: youruser
+  password: yourpassword
+  database: ragdb
+
+primary:
+  persistence:
+    enabled: true
+    storageClass: ebs-sc
+    size: 8Gi
+
+# Optional: expose with ClusterIP or NodePort
+service:
+  type: ClusterIP

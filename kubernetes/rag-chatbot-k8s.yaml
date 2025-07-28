@@ -1,0 +1,136 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rag-secrets
+  namespace: default
+type: Opaque
+stringData:
+  OPENAI_API_KEY: 
+  EMBEDDING_SERVICE_URL: http://embed-api:5001/embed
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-api
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-api
+  template:
+    metadata:
+      labels:
+        app: go-api
+    spec:
+      containers:
+      - name: go-api
+        image: 137068221475.dkr.ecr.us-east-1.amazonaws.com/felixmoronge-rag-api-go:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: OPENAI_API_KEY
+        - name: EMBEDDING_SERVICE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: EMBEDDING_SERVICE_URL
+        - name: POSTGRES_DSN
+          value: postgres://postgres:jCfAaeEOZJ@postgres:5432/ragdb?sslmode=disable
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-api
+  namespace: default
+spec:
+  selector:
+    app: go-api
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embed-api
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: embed-api
+  template:
+    metadata:
+      labels:
+        app: embed-api
+    spec:
+      containers:
+      - name: embed-api
+        image: 137068221475.dkr.ecr.us-east-1.amazonaws.com/felixmoronge-rag-embed-py:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5001
+        env:
+        - name: POSTGRES_DSN
+          value: postgres://postgres:jCfAaeEOZJ@postgres:5432/ragdb?sslmode=disable
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embed-api
+  namespace: default
+spec:
+  selector:
+    app: embed-api
+  ports:
+  - port: 5001
+    targetPort: 5001
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portfolio-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "120"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: www.felixmoronge.com
+      http:
+        paths:
+          - path: /api/ask
+            pathType: Prefix
+            backend:
+              service:
+                name: go-api
+                port:
+                  number: 8080
+          - path: /embed
+            pathType: Prefix
+            backend:
+              service:
+                name: embed-api
+                port:
+                  number: 5001
+  tls:
+    - hosts:
+        - www.felixmoronge.com
+      secretName: portfolio-tls

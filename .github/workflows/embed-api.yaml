@@ -1,0 +1,61 @@
+name: Build & Deploy embed-api
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: felixmorongeportfolio/rag-embed-py
+
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: 137068221475.dkr.ecr.us-east-1.amazonaws.com
+      IMAGE_NAME: felixmoronge-rag-embed-py
+      IMAGE_TAG: latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to Amazon ECR
+      run: |
+        aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+    - name: Build & Push embed-api image
+      run: |
+        docker build -t $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+
+    - name: Install AWS CLI & kubectl plugin
+      run: |
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+
+    - name: Decode kubeconfig & verify cluster access
+      run: |
+        echo "${{ secrets.KUBECONFIG_BASE64 }}" | base64 -d > kubeconfig
+        mkdir -p ~/.kube && mv kubeconfig ~/.kube/config
+
+        echo "🔐 Verifying cluster access..."
+        kubectl get nodes
+
+    - name: Restart embed-api deployment
+      run: |
+        echo "♻️ Restarting embed-api..."
+        kubectl rollout restart deployment embed-api -n default
+        kubectl rollout status deployment embed-api -n default
