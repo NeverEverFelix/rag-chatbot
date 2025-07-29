@@ -318,3 +318,85 @@ This system uses vector similarity search powered by pgvector...
 - `400`: Malformed request
 - `500`: Upstream failure or OpenAI error
 - `502`: Bad Gateway / Timeout
+
+
+## 10. Architecture Diagrams
+
+### 🧭 High-Level System Architecture
+
+```mermaid
+graph TD
+    A[User Interface<br/>felixmoronge.com] --> B[NGINX Ingress<br/>+ TLS via Cert-Manager]
+    B --> C[go-api<br/>/api/ask]
+    B --> D[embed-api<br/>/embed]
+
+    C -->|Calls embed-api| D
+    C -->|Queries| E[(PostgreSQL + pgvector)]
+
+    D -->|Returns Embedding| C
+    E -->|Returns Top-K Chunks| C
+```
+
+---
+
+### 📡 Request Flow (RAG Pipeline)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Ingress
+    participant go-api
+    participant embed-api
+    participant PostgreSQL
+    participant OpenAI
+
+    User->>Ingress: POST /api/ask
+    Ingress->>go-api: Route to go-api
+    go-api->>embed-api: POST /embed (question)
+    embed-api-->>go-api: Embedding vector
+    go-api->>PostgreSQL: SELECT top-K chunks (ANN search)
+    PostgreSQL-->>go-api: Top-K context chunks
+    go-api->>OpenAI: Stream GPT-3.5 with context
+    OpenAI-->>go-api: Token stream
+    go-api-->>User: Streamed response (SSE)
+```
+
+---
+
+### 🏗️ Infrastructure Provisioning (Terraform + Helm + Kubernetes)
+
+```mermaid
+graph LR
+    subgraph Terraform
+      A[EKS Cluster]
+      B[ECR Repos]
+      C[IAM Roles + Policies]
+      D[Helm Provider]
+    end
+
+    subgraph Helm
+      E[PostgreSQL with pgvector]
+    end
+
+    subgraph Kubernetes
+      F[go-api Deployment]
+      G[embed-api Deployment]
+      H[Postgres Deployment]
+      I[Secrets & ConfigMaps]
+      J[NGINX Ingress]
+    end
+
+    A --> F
+    A --> G
+    A --> H
+    D --> E
+    C --> B
+    I --> F
+    I --> G
+    J --> F
+    J --> G
+```
+
+---
+
+> ✅ GitHub automatically renders these diagrams when viewed on the site. For local previewing, use [Mermaid Live Editor](https://mermaid.live) or VSCode with the *Markdown Preview Mermaid Support* extension.
